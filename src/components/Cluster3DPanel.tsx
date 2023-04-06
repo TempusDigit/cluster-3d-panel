@@ -15,8 +15,7 @@ import {
   PanelProps
 } from '@grafana/data';
 import {
-  Cluster3DLegendOptions,
-  Cluster3DOptions,
+  ChartData,
   Cluster3DTooltipData
 } from 'types';
 import {
@@ -27,7 +26,6 @@ import {
   VizLegend,
   VizLegendItem
 } from '@grafana/ui';
-import { LegendDisplayMode } from '@grafana/schema';
 import Plot, { Figure } from 'react-plotly.js';
 import { PanelDataErrorView } from '@grafana/runtime';
 import { css } from '@emotion/css';
@@ -41,6 +39,7 @@ import {
 } from 'plotly.js';
 import tinycolor from 'tinycolor2';
 import Cluster3DTooltipTable from './Cluster3DTooltipTable';
+import { Cluster3DOptions, defaultLegendConfig } from 'models.gen';
 
 interface Props extends PanelProps<Cluster3DOptions> { }
 
@@ -70,67 +69,33 @@ const getStyles = (theme: GrafanaTheme2) => {
   };
 };
 
-const defaultLegendOptions: Cluster3DLegendOptions = {
-  displayMode: LegendDisplayMode.List,
-  showLegend: true,
-  placement: 'right',
-  calcs: [],
-  separateLegendBySeries: false,
-};
+const requiredFieldCount = 4;
 
 export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
   const { data, id, fieldConfig, timeZone, replaceVariables, width, height, options } = props;
-
-  const requiredFieldLength = 4;
-  if (!data.series.length || data.series.some((serie) => serie.fields.length < requiredFieldLength)) {
-    return <PanelDataErrorView panelId={id} fieldConfig={fieldConfig} data={data} />;
-  }
-
-  const chartData: { clusterData: Array<{ clusterLabel: string, x: number[], y: number[], z: number[] }>, legendData: DataFrame[], fieldNames: string[] } = useMemo(
-    () => formatData(data.series, options.legend.separateLegendBySeries, fieldConfig), [data, options.legend.separateLegendBySeries]
-  );
+  const dataValid = data.series.length > 0 && data.series.every((serie) => serie.fields.length >= requiredFieldCount);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const chartData = useMemo<ChartData>(() => formatData(dataValid, data.series, options.legend.separateLegendBySeries, fieldConfig), [data, options.legend.separateLegendBySeries]);
   const theme = useTheme2();
   const fieldDisplayValues = useMemo(() => getFieldDisplayValues({
     fieldConfig,
-    reduceOptions: { calcs: options.legend.calcs },
+    reduceOptions: { calcs: defaultLegendConfig.calcs },
     data: chartData.legendData,
     theme: theme,
     replaceVariables,
     timeZone,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [fieldConfig, chartData.legendData, theme]);
-  const legendColors = new Map(
-    fieldDisplayValues.map(fieldDisplayValue => {
-      return [fieldDisplayValue.display.title ?? '', fieldDisplayValue.display.color ?? FALLBACK_COLOR];
-    }),
-  );
   const styles = useStyles2(getStyles);
-  const tickFont = {
-    family: theme.typography.fontFamily,
-    size: theme.typography.fontSize,
-  };
-  const axisSettings = {
-    color: theme.colors.text.primary,
-    tickfont: tickFont,
-  };
   const tooltip = useTooltip<Cluster3DTooltipData>();
   const { containerRef, TooltipInPortal } = useTooltipInPortal({
     detectBounds: true,
     scroll: true,
   });
-  const showTooltip = options.tooltip.mode !== TooltipDisplayMode.None && tooltip.tooltipOpen;
   const initialCamera = useRef<Partial<Camera>>();
   // let [camera, setCamera] = useState<Partial<Camera>>();
   const camera = useRef<Partial<Camera>>();
   const pointNumber = useRef<number>();
-
-  const onPlotlyUpdate = (figure: Figure) => {
-    if (figure.layout.scene?.camera !== undefined) {
-      if (initialCamera.current === undefined) {
-        initialCamera.current = { ...figure.layout.scene.camera };
-      }
-      camera.current = figure.layout.scene.camera;
-    }
-  }
 
   const onPlotlyPointHover = useCallback(
     (event: PlotHoverEvent) => {
@@ -144,8 +109,37 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
         pointNumber.current = eventPoint.pointNumber;
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [tooltip]
   );
+
+  if (!dataValid) {
+    return <PanelDataErrorView panelId={id} fieldConfig={fieldConfig} data={data} />;
+  }
+
+  const legendColors = new Map(
+    fieldDisplayValues.map(fieldDisplayValue => {
+      return [fieldDisplayValue.display.title ?? '', fieldDisplayValue.display.color ?? FALLBACK_COLOR];
+    }),
+  );
+  const tickFont = {
+    family: theme.typography.fontFamily,
+    size: theme.typography.fontSize,
+  };
+  const axisSettings = {
+    color: theme.colors.text.primary,
+    tickfont: tickFont,
+  };
+  const showTooltip = options.tooltip.mode !== TooltipDisplayMode.None && tooltip.tooltipOpen;
+
+  const onPlotlyUpdate = (figure: Figure) => {
+    if (figure.layout.scene?.camera !== undefined) {
+      if (initialCamera.current === undefined) {
+        initialCamera.current = { ...figure.layout.scene.camera };
+      }
+      camera.current = figure.layout.scene.camera;
+    }
+  }
 
   const onPlotlyPointUnhover = () => {
     tooltip.hideTooltip();
@@ -255,35 +249,36 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
   );
 };
 
-function formatData(series: DataFrame[], separateLegendBySeries: boolean, fieldConfig: FieldConfigSource<any>) {
-  const localChartData = new Map<string, { x: number[], y: number[], z: number[] }>();
-  series.forEach(serie => {
-    serie.fields[3].values.toArray().forEach((clusterLabel, i) => {
-      if (separateLegendBySeries) {
-        clusterLabel = serie.refId + clusterLabel;
-      }
-      if (!localChartData.get(clusterLabel)) {
-        localChartData.set(clusterLabel, { x: [], y: [], z: [] });
-      }
-      const xyz = localChartData.get(clusterLabel);
-      xyz?.x.push(serie.fields[0].values.get(i));
-      xyz?.y.push(serie.fields[1].values.get(i));
-      xyz?.z.push(serie.fields[2].values.get(i));
+function formatData(dataValid: boolean, series: DataFrame[], separateLegendBySeries: boolean, fieldConfig: FieldConfigSource<any>): ChartData {
+  if (dataValid) {
+    const localChartData = new Map<string, { x: number[], y: number[], z: number[] }>();
+    series.forEach(serie => {
+      serie.fields[3].values.toArray().forEach((clusterLabel, i) => {
+        if (separateLegendBySeries) {
+          clusterLabel = serie.refId + clusterLabel;
+        }
+        if (!localChartData.get(clusterLabel)) {
+          localChartData.set(clusterLabel, { x: [], y: [], z: [] });
+        }
+        const xyz = localChartData.get(clusterLabel);
+        xyz?.x.push(serie.fields[0].values.get(i));
+        xyz?.y.push(serie.fields[1].values.get(i));
+        xyz?.z.push(serie.fields[2].values.get(i));
+      });
     });
-  });
-  const clusterData = Array.from(localChartData, (entry) => {
-    return { clusterLabel: entry[0], x: entry[1].x, y: entry[1].y, z: entry[1].z };
-  }).sort((a, b) => a.clusterLabel > b.clusterLabel ? 1 : -1);
-  const legendData: DataFrame[] = [{
-    fields: clusterData.map((cluster, index) => {
-      return {
-        // Čia values turėtų būti x y z masyvai, tačiau reducer taikoma ant vieno lauko. Ar padaryti, kad legendoje rodytų tris values prie kiekvieno label? Ar droppinti feature ir padaryti, kad nerodytų šito option?
-        // name: '' + cluster.clusterLabel, type: FieldType.number, config: { color: getFieldColor(cluster.clusterLabel, fieldConfig) }, values: new ArrayVector([0, 1, 2, 3]), state: { seriesIndex: index }
-        name: '' + cluster.clusterLabel, type: FieldType.number, config: { color: getFieldColor(cluster.clusterLabel, fieldConfig) }, values: new ArrayVector(), state: { seriesIndex: index }
-      }
-    }), length: 0
-  }];
-  return { clusterData, legendData, fieldNames: series[0].fields.map(field => field.name) };
+    const clusterData = Array.from(localChartData, (entry) => {
+      return { clusterLabel: entry[0], x: entry[1].x, y: entry[1].y, z: entry[1].z };
+    }).sort((a, b) => a.clusterLabel > b.clusterLabel ? 1 : -1);
+    const legendData: DataFrame[] = [{
+      fields: clusterData.map((cluster, index) => {
+        return {
+          name: '' + cluster.clusterLabel, type: FieldType.number, config: { color: getFieldColor(cluster.clusterLabel, fieldConfig) }, values: new ArrayVector(), state: { seriesIndex: index }
+        }
+      }), length: 0
+    }];
+    return { clusterData, legendData, fieldNames: series[0].fields.map(field => field.name) };
+  }
+  return { clusterData: [], legendData: [], fieldNames: [] };
 }
 
 function getFieldColor(displayName: string, fieldConfig: FieldConfigSource) {
@@ -300,7 +295,7 @@ function getFieldColor(displayName: string, fieldConfig: FieldConfigSource) {
 }
 
 function getLegend(props: Props, displayValues: FieldDisplay[]) {
-  const legendOptions = props.options.legend ?? defaultLegendOptions;
+  const legendOptions = props.options.legend ?? defaultLegendConfig;
 
   if (legendOptions.showLegend === false) {
     return undefined;
@@ -325,7 +320,7 @@ function getLegend(props: Props, displayValues: FieldDisplay[]) {
   );
 }
 
-function getTooltipData(eventPoint: any, legendColors: Map<string, string>, fieldNames: string[]) {
+function getTooltipData(eventPoint: any, legendColors: Map<string, string>, fieldNames: string[]): Cluster3DTooltipData {
   return {
     color: legendColors.get(eventPoint.data.name.toString()) ?? FALLBACK_COLOR,
     label: eventPoint.data.name,

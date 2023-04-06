@@ -1,22 +1,19 @@
-import {
-  VizLegendOptions,
-  SingleStatBaseOptions
-} from '@grafana/schema';
-import { OptionsWithTooltip } from '@grafana/ui';
+import { DataFrame } from '@grafana/data';
 
-export interface Cluster3DLegendOptions extends VizLegendOptions {
-  separateLegendBySeries: boolean;
+interface ClusterData {
+  clusterLabel: string;
+  x: number[];
+  y: number[];
+  z: number[];
 }
 
-export interface Cluster3DOptions extends OptionsWithTooltip, SingleStatBaseOptions {
-  legend: Cluster3DLegendOptions;
-  pointSize: number;
-  // Line width broken: https://github.com/plotly/plotly.js/issues/3796
-  // lineWidth: number;
-  fillOpacity: number;
+export interface ChartData {
+  clusterData: ClusterData[];
+  legendData: DataFrame[];
+  fieldNames: string[];
 }
 
-export interface Cluster3DTooltipDisplayField {
+interface Cluster3DTooltipDisplayField {
   fieldName: string;
   value: number;
 }

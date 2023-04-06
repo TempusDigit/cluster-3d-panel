@@ -3,9 +3,10 @@ import {
   FieldConfigProperty,
   PanelPlugin
 } from '@grafana/data';
-import { Cluster3DOptions } from './types';
 import { Cluster3DPanel } from './components/Cluster3DPanel';
 import { commonOptionsBuilder } from '@grafana/ui';
+import { XYZDimsEditor } from 'components/XYZDimsEditor';
+import { Cluster3DOptions, SeriesMapping, defaultCluster3DConfig } from 'models.gen';
 
 export const plugin = new PanelPlugin<Cluster3DOptions>(Cluster3DPanel)
   .useFieldConfig({
@@ -38,17 +39,55 @@ export const plugin = new PanelPlugin<Cluster3DOptions>(Cluster3DPanel)
     commonOptionsBuilder.addLegendOptions(builder, false);
 
     return builder
+      .addRadio({
+        path: 'seriesMapping',
+        name: 'Series mapping',
+        defaultValue: defaultCluster3DConfig.seriesMapping,
+        settings: {
+          options: [
+            { value: SeriesMapping.Auto, label: 'Auto' },
+            { value: SeriesMapping.Manual, label: 'Manual' },
+          ],
+        },
+      })
+      .addCustomEditor({
+        id: 'xyPlotConfig',
+        path: 'dims',
+        name: 'Data',
+        editor: XYZDimsEditor,
+        showIf: (cfg) => cfg.seriesMapping === 'auto',
+      })
+      .addFieldNamePicker({
+        path: 'series.x',
+        name: 'X field',
+        showIf: (cfg) => cfg.seriesMapping === 'manual',
+      })
+      .addFieldNamePicker({
+        path: 'series.y',
+        name: 'Y field',
+        showIf: (cfg) => cfg.seriesMapping === 'manual',
+      })
+      .addFieldNamePicker({
+        path: 'series.z',
+        name: 'Z field',
+        showIf: (cfg) => cfg.seriesMapping === 'manual',
+      })
+      .addFieldNamePicker({
+        path: 'series.clusterName',
+        name: 'Cluster mame field',
+        showIf: (cfg) => cfg.seriesMapping === 'manual',
+      })
       .addBooleanSwitch({
         name: 'Separate legend by series',
         path: 'legend.separateLegendBySeries',
         category: ['Legend'],
-        showIf: (c) => c.legend.showLegend === true,
+        showIf: (cfg) => cfg.legend.showLegend === true,
       })
       .addSliderInput({
         path: 'pointSize',
         name: 'Point size',
         category: ['Graph styles'],
-        defaultValue: 2,
+        defaultValue: defaultCluster3DConfig.pointSize,
         settings: {
           min: 1,
           max: 20,
@@ -61,7 +100,7 @@ export const plugin = new PanelPlugin<Cluster3DOptions>(Cluster3DPanel)
       //   path: 'lineWidth',
       //   name: 'Line width',
       //   category: ['Graph styles'],
-      //   defaultValue: 1,
+      //   defaultValue: defualtCluster3DConfig.lineWidth,
       //   settings: {
       //     min: 0,
       //     max: 100,
@@ -72,7 +111,7 @@ export const plugin = new PanelPlugin<Cluster3DOptions>(Cluster3DPanel)
         path: 'fillOpacity',
         name: 'Fill opacity',
         category: ['Graph styles'],
-        defaultValue: 90,
+        defaultValue: defaultCluster3DConfig.fillOpacity,
         settings: {
           min: 0,
           max: 100,
