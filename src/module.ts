@@ -1,12 +1,14 @@
-import {
-  FieldColorModeId,
-  FieldConfigProperty,
-  PanelPlugin
-} from '@grafana/data';
+import { Field, FieldColorModeId, FieldConfigProperty, FieldType, PanelPlugin } from '@grafana/data';
 import { Cluster3DPanel } from './components/Cluster3DPanel';
 import { commonOptionsBuilder } from '@grafana/ui';
-import { XYZDimsEditor } from 'components/XYZDimsEditor';
-import { Cluster3DOptions, SeriesMapping, defaultCluster3DConfig } from 'models.gen';
+import { Cluster3DOptions, SeriesMapping, defaultCluster3DConfig, defaultSeriesConfig } from 'models.gen';
+
+const fieldNamePickerConfig = {
+  settings: {
+    filter: (field: Field) => field.type === FieldType.number,
+  },
+  showIf: (cfg: Cluster3DOptions) => cfg.seriesMapping === SeriesMapping.Manual,
+};
 
 export const plugin = new PanelPlugin<Cluster3DOptions>(Cluster3DPanel)
   .useFieldConfig({
@@ -50,32 +52,29 @@ export const plugin = new PanelPlugin<Cluster3DOptions>(Cluster3DPanel)
           ],
         },
       })
-      .addCustomEditor({
-        id: 'xyPlotConfig',
-        path: 'dims',
-        name: 'Data',
-        editor: XYZDimsEditor,
-        showIf: (cfg) => cfg.seriesMapping === 'auto',
-      })
       .addFieldNamePicker({
         path: 'series.x',
         name: 'X field',
-        showIf: (cfg) => cfg.seriesMapping === 'manual',
+        defaultValue: defaultSeriesConfig.x,
+        ...fieldNamePickerConfig,
       })
       .addFieldNamePicker({
         path: 'series.y',
         name: 'Y field',
-        showIf: (cfg) => cfg.seriesMapping === 'manual',
+        defaultValue: defaultSeriesConfig.y,
+        ...fieldNamePickerConfig,
       })
       .addFieldNamePicker({
         path: 'series.z',
         name: 'Z field',
-        showIf: (cfg) => cfg.seriesMapping === 'manual',
+        defaultValue: defaultSeriesConfig.z,
+        ...fieldNamePickerConfig,
       })
       .addFieldNamePicker({
-        path: 'series.clusterName',
-        name: 'Cluster mame field',
-        showIf: (cfg) => cfg.seriesMapping === 'manual',
+        path: 'series.clusterLabel',
+        name: 'Cluster name field',
+        defaultValue: defaultSeriesConfig.clusterLabel,
+        showIf: (cfg: Cluster3DOptions) => cfg.seriesMapping === SeriesMapping.Manual,
       })
       .addBooleanSwitch({
         name: 'Separate legend by series',

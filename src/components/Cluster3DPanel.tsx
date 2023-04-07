@@ -1,45 +1,16 @@
-import React, {
-  useCallback,
-  useMemo,
-  useRef
-} from 'react';
-import {
-  ArrayVector,
-  DataFrame,
-  FALLBACK_COLOR,
-  FieldConfigSource,
-  FieldDisplay,
-  FieldType,
-  getFieldDisplayValues,
-  GrafanaTheme2,
-  PanelProps
-} from '@grafana/data';
-import {
-  ChartData,
-  Cluster3DTooltipData
-} from 'types';
-import {
-  TooltipDisplayMode,
-  useStyles2,
-  useTheme2,
-  VizLayout,
-  VizLegend,
-  VizLegendItem
-} from '@grafana/ui';
+import React, { useCallback, useMemo, useRef } from 'react';
+import { FALLBACK_COLOR, FieldDisplay, getFieldDisplayValues, GrafanaTheme2, PanelProps } from '@grafana/data';
+import { ChartData, Cluster3DTooltipData } from 'types';
+import { TooltipDisplayMode, useStyles2, useTheme2, VizLayout, VizLegend, VizLegendItem } from '@grafana/ui';
 import Plot, { Figure } from 'react-plotly.js';
 import { PanelDataErrorView } from '@grafana/runtime';
 import { css } from '@emotion/css';
-import {
-  useTooltip,
-  useTooltipInPortal
-} from '@visx/tooltip';
-import {
-  Camera,
-  PlotHoverEvent
-} from 'plotly.js';
+import { useTooltip, useTooltipInPortal } from '@visx/tooltip';
+import { Camera, PlotHoverEvent } from 'plotly.js';
 import tinycolor from 'tinycolor2';
 import Cluster3DTooltipTable from './Cluster3DTooltipTable';
 import { Cluster3DOptions, defaultLegendConfig } from 'models.gen';
+import { formatData, getTooltipData, mapSeries } from 'utils';
 
 interface Props extends PanelProps<Cluster3DOptions> { }
 
@@ -48,9 +19,9 @@ const getStyles = (theme: GrafanaTheme2) => {
     container: css`
       width: 100%;
       height: 100%;
-      // display: flex;
-      // align-items: center;
-      // justify-content: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     `,
     tooltipPortal: css`
       overflow: hidden;
@@ -69,13 +40,15 @@ const getStyles = (theme: GrafanaTheme2) => {
   };
 };
 
-const requiredFieldCount = 4;
-
 export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
   const { data, id, fieldConfig, timeZone, replaceVariables, width, height, options } = props;
-  const dataValid = data.series.length > 0 && data.series.every((serie) => serie.fields.length >= requiredFieldCount);
+
+  // move to appropriate location considering dataValid flag, maybe update dataValid location instead
+  const series = useMemo(() => mapSeries(data.series, options.series!, options.seriesMapping), [data.series, options.series, options.seriesMapping]);
+  // čia fields.length visada bus jau REQUIRED_FIELD_COUNT
+  const dataValid = series.length > 0;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const chartData = useMemo<ChartData>(() => formatData(dataValid, data.series, options.legend.separateLegendBySeries, fieldConfig), [data, options.legend.separateLegendBySeries]);
+  const chartData = useMemo<ChartData>(() => formatData(dataValid, series, options.legend.separateLegendBySeries, fieldConfig), [data, options.legend.separateLegendBySeries]);
   const theme = useTheme2();
   const fieldDisplayValues = useMemo(() => getFieldDisplayValues({
     fieldConfig,
@@ -249,51 +222,6 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
   );
 };
 
-function formatData(dataValid: boolean, series: DataFrame[], separateLegendBySeries: boolean, fieldConfig: FieldConfigSource<any>): ChartData {
-  if (dataValid) {
-    const localChartData = new Map<string, { x: number[], y: number[], z: number[] }>();
-    series.forEach(serie => {
-      serie.fields[3].values.toArray().forEach((clusterLabel, i) => {
-        if (separateLegendBySeries) {
-          clusterLabel = serie.refId + clusterLabel;
-        }
-        if (!localChartData.get(clusterLabel)) {
-          localChartData.set(clusterLabel, { x: [], y: [], z: [] });
-        }
-        const xyz = localChartData.get(clusterLabel);
-        xyz?.x.push(serie.fields[0].values.get(i));
-        xyz?.y.push(serie.fields[1].values.get(i));
-        xyz?.z.push(serie.fields[2].values.get(i));
-      });
-    });
-    const clusterData = Array.from(localChartData, (entry) => {
-      return { clusterLabel: entry[0], x: entry[1].x, y: entry[1].y, z: entry[1].z };
-    }).sort((a, b) => a.clusterLabel > b.clusterLabel ? 1 : -1);
-    const legendData: DataFrame[] = [{
-      fields: clusterData.map((cluster, index) => {
-        return {
-          name: '' + cluster.clusterLabel, type: FieldType.number, config: { color: getFieldColor(cluster.clusterLabel, fieldConfig) }, values: new ArrayVector(), state: { seriesIndex: index }
-        }
-      }), length: 0
-    }];
-    return { clusterData, legendData, fieldNames: series[0].fields.map(field => field.name) };
-  }
-  return { clusterData: [], legendData: [], fieldNames: [] };
-}
-
-function getFieldColor(displayName: string, fieldConfig: FieldConfigSource) {
-  for (const override of fieldConfig.overrides) {
-    if (override.matcher.id === "byName" && override.matcher.options === displayName.toString()) {
-      for (const prop of override.properties) {
-        if (prop.id === "color" && prop.value) {
-          return prop.value;
-        }
-      }
-    }
-  }
-  return fieldConfig.defaults.color;
-}
-
 function getLegend(props: Props, displayValues: FieldDisplay[]) {
   const legendOptions = props.options.legend ?? defaultLegendConfig;
 
@@ -318,14 +246,4 @@ function getLegend(props: Props, displayValues: FieldDisplay[]) {
       displayMode={legendOptions.displayMode}
     />
   );
-}
-
-function getTooltipData(eventPoint: any, legendColors: Map<string, string>, fieldNames: string[]): Cluster3DTooltipData {
-  return {
-    color: legendColors.get(eventPoint.data.name.toString()) ?? FALLBACK_COLOR,
-    label: eventPoint.data.name,
-    x: { fieldName: fieldNames[0], value: eventPoint.x },
-    y: { fieldName: fieldNames[1], value: eventPoint.y },
-    z: { fieldName: fieldNames[2], value: eventPoint.z },
-  };
 }
