@@ -1,136 +1,106 @@
-import { DataFrame, Field, FieldType, ArrayVector, getFieldDisplayName, FALLBACK_COLOR, FieldConfigSource } from '@grafana/data';
-import { Cluster3DSeriesConfig, SeriesMapping } from 'models.gen';
-import { ChartData, Cluster3DTooltipData } from 'types';
+import { DataFrame, Field, FieldType, ArrayVector, getFieldDisplayName, FALLBACK_COLOR, FieldConfigSource, FieldDisplay } from '@grafana/data';
+import { Cluster3DSeriesConfig, SeriesMapping, defaultSeriesConfig } from 'models.gen';
+import { Data } from 'plotly.js';
+import tinycolor from 'tinycolor2';
+import { Cluster3DTooltipData, ClusterData } from 'types';
 
 const REQUIRED_FIELD_COUNT = 4;
 
-// make code shorter, use switches, arrays etc. and make it simpler
-export function mapSeries(series: DataFrame[], explicitSeries: Cluster3DSeriesConfig, mappingType: SeriesMapping): DataFrame[] {
-  // if (!series.length || (!mappedFieldNames.x && !mappedFieldNames.y && !mappedFieldNames.z && !mappedFieldNames.clusterLabel)) {
-  //   return [];
-  // }
-
-  if (!series.length || series.some((serie) => serie.fields.length < REQUIRED_FIELD_COUNT)) {
-    return [];
-  }
-
-  let copy: Field;
-
-  let xField: Field | null = null;
-  let yField: Field | null = null;
-  let zField: Field | null = null;
-  let clusterLabelField: Field | null = null;
-
-  const seriesIndexUsed: boolean[] = new Array(series[0].fields.length).fill(false);
-
-  for (const frame of series) {
-    for (const field of frame.fields) {
-      const name = getFieldDisplayName(field, series[0], series);
-
-      let f: Field | null = null;
-
-      switch (field.type) {
-        case FieldType.string:
-          f = field;
-          break;
-
-        case FieldType.number:
-          copy = {
-            ...field,
-            values: new ArrayVector(
-              field.values.toArray().map((v) => {
-                if (!(Number.isFinite(v) || v == null)) {
-                  return null;
-                }
-
-                return v;
-              })
-            ),
-          };
-
-          f = copy;
-          break;
-      }
-
-      if (!f) {
-        continue;
-      }
-
-      if (name === explicitSeries.x && f.type === FieldType.number) {
-        xField = f;
-        seriesIndexUsed[f.state?.seriesIndex!] = true;
-      }
-
-      if (name === explicitSeries.y && f.type === FieldType.number) {
-        yField = f;
-        seriesIndexUsed[f.state?.seriesIndex!] = true;
-      }
-
-      if (name === explicitSeries.z && f.type === FieldType.number) {
-        zField = f;
-        seriesIndexUsed[f.state?.seriesIndex!] = true;
-      }
-
-      if (name === explicitSeries.clusterLabel) {
-        clusterLabelField = f;
-        seriesIndexUsed[f.state?.seriesIndex!] = true;
+function getMappedFieldIndexes(series: DataFrame[], seriesConfig: Cluster3DSeriesConfig, mappingType: SeriesMapping): number[] {
+  const usedFieldIndexes: number[] = new Array(REQUIRED_FIELD_COUNT).fill(null);
+  const fieldIndexUsed: boolean[] = new Array(series[0].fields.length).fill(false);
+  for (let i = 0; i < series[0].fields.length; i++) {
+    const field = series[0].fields[i];
+    const name = getFieldDisplayName(field, series[0], series);
+    if (field.type === FieldType.number) {
+      if (name === seriesConfig.x) {
+        usedFieldIndexes[0] = i;
+        fieldIndexUsed[i] = true;
+      } else if (name === seriesConfig.y) {
+        usedFieldIndexes[1] = i;
+        fieldIndexUsed[i] = true;
+      } else if (name === seriesConfig.z) {
+        usedFieldIndexes[2] = i;
+        fieldIndexUsed[i] = true;
       }
     }
-  }
-
-  const possiblyNullfields = [xField, yField, zField, clusterLabelField];
-  const fields: Field[] = [];
-  // if (fields.filter(field => field).length !== REQUIRED_FIELD_COUNT) {
-  //   if (mappingType === SeriesMapping.Auto) {
-  //     fields.forEach((field, index) => {
-  //       if (!field) {
-  //         const firstUnusedIndex = seriesIndexUsed.indexOf(false);
-  //         fields[index] = series[0].fields[firstUnusedIndex];
-  //         seriesIndexUsed[firstUnusedIndex] = true;
-  //       }
-  //     });
-  //   } else {
-  //     return [];
-  //   }
-  // }
-
-  for (let i = 0; i < possiblyNullfields.length; i++) {
-    if (possiblyNullfields[i]) {
-      fields.push(possiblyNullfields[i]!);
+    if (name === seriesConfig.clusterLabel && (field.type === FieldType.number || field.type === FieldType.string)) {
+      usedFieldIndexes[3] = i;
+      fieldIndexUsed[i] = true;
     }
-    else {
+  }
+  for (let i = 0; i < usedFieldIndexes.length; i++) {
+    if (usedFieldIndexes[i] == null) {
       if (mappingType === SeriesMapping.Auto) {
-        const firstUnusedIndex = seriesIndexUsed.indexOf(false);
-        fields.push(series[0].fields[firstUnusedIndex]);
-        seriesIndexUsed[firstUnusedIndex] = true;
+        const firstUnusedIndex = fieldIndexUsed.indexOf(false);
+        usedFieldIndexes[i] = firstUnusedIndex;
+        fieldIndexUsed[firstUnusedIndex] = true;
       } else {
         return [];
       }
     }
   }
-
-  const frame: DataFrame = {
-    ...series[0],
-    fields: fields,
-  };
-
-  return [frame];
+  return usedFieldIndexes;
 }
 
-function getFieldColor(displayName: string, fieldConfig: FieldConfigSource) {
-  for (const override of fieldConfig.overrides) {
-    if (override.matcher.id === "byName" && override.matcher.options === displayName.toString()) {
-      for (const prop of override.properties) {
-        if (prop.id === "color" && prop.value) {
-          return prop.value;
-        }
+export function mapSeries(series: DataFrame[], seriesConfig: Cluster3DSeriesConfig, mappingType: SeriesMapping): DataFrame[] {
+  if (!series.length || series.some((serie) => serie.fields.length < REQUIRED_FIELD_COUNT)) {
+    return [];
+  }
+
+  let localSeriesConfig = seriesConfig;
+  if (mappingType === SeriesMapping.Auto) {
+    localSeriesConfig = defaultSeriesConfig;
+  } else if (!(localSeriesConfig.x && localSeriesConfig.y && localSeriesConfig.z && localSeriesConfig.clusterLabel)) {
+    return [];
+  }
+
+  const mappedFieldIndexes = getMappedFieldIndexes(series, localSeriesConfig, mappingType);
+  if (!mappedFieldIndexes.length) {
+    return [];
+  }
+
+  let mappedSeries: DataFrame[] = [];
+  let fields: Field[];
+
+  for (const frame of series) {
+    fields = [];
+    for (const fieldIndex of mappedFieldIndexes) {
+      const field = frame.fields[fieldIndex];
+      let formattedField: Field | null = null;
+      switch (field.type) {
+        case FieldType.number:
+          formattedField = {
+            ...field,
+            values: new ArrayVector(
+              field.values.toArray().map((value) => {
+                if (!(Number.isFinite(value) || value == null)) {
+                  return null;
+                }
+                return value;
+              })
+            ),
+          };
+          break;
+        case FieldType.string:
+          formattedField = field;
+          break;
+      }
+      if (formattedField) {
+        // Čia gal galima atiduoti tik dalį duomenų, kiti duomenys gal nereikalingi
+        fields.push(formattedField);
       }
     }
+    mappedSeries.push({
+      // Čia gal galima atiduoti tik dalį duomenų, kiti duomenys gal nereikalingi
+      ...frame,
+      fields: fields,
+    });
   }
-  return fieldConfig.defaults.color;
+  return mappedSeries;
 }
 
-export function formatData(dataValid: boolean, series: DataFrame[], separateLegendBySeries: boolean, fieldConfig: FieldConfigSource<any>): ChartData {
+export function getClusterData(dataValid: boolean, series: DataFrame[], separateLegendBySeries: boolean): ClusterData[] {
   if (dataValid) {
     const localChartData = new Map<string, { x: number[], y: number[], z: number[] }>();
     series.forEach(serie => {
@@ -147,20 +117,72 @@ export function formatData(dataValid: boolean, series: DataFrame[], separateLege
         xyz?.z.push(serie.fields[2].values.get(i));
       });
     });
-    const clusterData = Array.from(localChartData, (entry) => {
+    return Array.from(localChartData, (entry) => {
       return { clusterLabel: entry[0], x: entry[1].x, y: entry[1].y, z: entry[1].z };
     }).sort((a, b) => a.clusterLabel > b.clusterLabel ? 1 : -1);
-    const legendData: DataFrame[] = [{
+  }
+  return [];
+}
+
+function getFieldColor(displayName: string, fieldConfig: FieldConfigSource) {
+  for (const override of fieldConfig.overrides) {
+    if (override.matcher.id === "byName" && override.matcher.options === displayName.toString()) {
+      for (const prop of override.properties) {
+        if (prop.id === "color" && prop.value) {
+          return prop.value;
+        }
+      }
+    }
+  }
+  return fieldConfig.defaults.color;
+}
+
+export function getLegendData(dataValid: boolean, clusterData: ClusterData[], fieldConfig: FieldConfigSource<any>): DataFrame[] {
+  if (dataValid) {
+    return [{
       fields: clusterData.map((cluster, index) => {
         return {
           name: '' + cluster.clusterLabel, type: FieldType.number, config: { color: getFieldColor(cluster.clusterLabel, fieldConfig) }, values: new ArrayVector(), state: { seriesIndex: index }
         }
       }), length: 0
     }];
-    return { clusterData, legendData, fieldNames: series[0].fields.map(field => field.name) };
   }
-  return { clusterData: [], legendData: [], fieldNames: [] };
+  return [];
 }
+
+export function getFieldNames(dataValid: boolean, firstSeries: DataFrame): string[] {
+  if (dataValid) {
+    return firstSeries.fields.map(field => field.name);
+  }
+  return [];
+}
+
+export function getPlotlyData(dataValid: boolean, clusterData: ClusterData[], fieldDisplayValues: FieldDisplay[], fillOpacity: number, pointSize: number): Data[] {
+  if (dataValid) {
+    return clusterData.map((cluster, index) => {
+      return {
+        type: "scatter3d",
+        name: cluster.clusterLabel,
+        x: cluster.x,
+        y: cluster.y,
+        z: cluster.z,
+        mode: "markers",
+        marker: {
+          line: {
+            color: fieldDisplayValues[index].display.color,
+            // Line width broken: https://github.com/plotly/plotly.js/issues/3796
+            width: 1,
+            // width: options.lineWidth,
+          },
+          color: tinycolor(fieldDisplayValues[index].display.color).setAlpha(fillOpacity / 100).toRgbString(),
+          size: pointSize,
+        },
+        hoverinfo: 'none',
+      };
+    });
+  }
+  return [];
+};
 
 export function getTooltipData(eventPoint: any, legendColors: Map<string, string>, fieldNames: string[]): Cluster3DTooltipData {
   return {

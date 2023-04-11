@@ -1,16 +1,15 @@
 import React, { useCallback, useMemo, useRef } from 'react';
-import { FALLBACK_COLOR, FieldDisplay, getFieldDisplayValues, GrafanaTheme2, PanelProps } from '@grafana/data';
-import { ChartData, Cluster3DTooltipData } from 'types';
+import { DataFrame, FALLBACK_COLOR, FieldDisplay, getFieldDisplayValues, GrafanaTheme2, PanelProps } from '@grafana/data';
+import { Cluster3DTooltipData, ClusterData } from 'types';
 import { TooltipDisplayMode, useStyles2, useTheme2, VizLayout, VizLegend, VizLegendItem } from '@grafana/ui';
 import Plot, { Figure } from 'react-plotly.js';
 import { PanelDataErrorView } from '@grafana/runtime';
 import { css } from '@emotion/css';
 import { useTooltip, useTooltipInPortal } from '@visx/tooltip';
-import { Camera, PlotHoverEvent } from 'plotly.js';
-import tinycolor from 'tinycolor2';
+import { Camera, Data, PlotHoverEvent } from 'plotly.js';
 import Cluster3DTooltipTable from './Cluster3DTooltipTable';
 import { Cluster3DOptions, defaultLegendConfig } from 'models.gen';
-import { formatData, getTooltipData, mapSeries } from 'utils';
+import { getClusterData, getFieldNames, getLegendData, getPlotlyData, getTooltipData, mapSeries } from 'utils';
 
 interface Props extends PanelProps<Cluster3DOptions> { }
 
@@ -42,23 +41,24 @@ const getStyles = (theme: GrafanaTheme2) => {
 
 export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
   const { data, id, fieldConfig, timeZone, replaceVariables, width, height, options } = props;
-
-  // move to appropriate location considering dataValid flag, maybe update dataValid location instead
   const series = useMemo(() => mapSeries(data.series, options.series!, options.seriesMapping), [data.series, options.series, options.seriesMapping]);
-  // čia fields.length visada bus jau REQUIRED_FIELD_COUNT
   const dataValid = series.length > 0;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const chartData = useMemo<ChartData>(() => formatData(dataValid, series, options.legend.separateLegendBySeries, fieldConfig), [data, options.legend.separateLegendBySeries]);
+  const clusterData = useMemo<ClusterData[]>(() => getClusterData(dataValid, series, options.legend.separateLegendBySeries), [dataValid, series, options.legend.separateLegendBySeries]);
+  const legendData = useMemo<DataFrame[]>(() => getLegendData(dataValid, clusterData, fieldConfig), [dataValid, clusterData, fieldConfig]);
+  const fieldNames = useMemo<string[]>(() => getFieldNames(dataValid, series[0]), [dataValid, series]);
   const theme = useTheme2();
   const fieldDisplayValues = useMemo(() => getFieldDisplayValues({
     fieldConfig,
     reduceOptions: { calcs: defaultLegendConfig.calcs },
-    data: chartData.legendData,
+    data: legendData,
     theme: theme,
     replaceVariables,
     timeZone,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [fieldConfig, chartData.legendData, theme]);
+  }), [fieldConfig, legendData, theme]);
+  const plotlyData = useMemo<Data[]>(() => getPlotlyData(dataValid, clusterData, fieldDisplayValues, options.fillOpacity, options.pointSize),
+    [dataValid, clusterData, fieldDisplayValues, options.fillOpacity, options.pointSize]);
   const styles = useStyles2(getStyles);
   const tooltip = useTooltip<Cluster3DTooltipData>();
   const { containerRef, TooltipInPortal } = useTooltipInPortal({
@@ -77,7 +77,7 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
         tooltip.showTooltip({
           tooltipLeft: eventPoint.bbox.x0,
           tooltipTop: eventPoint.bbox.y0,
-          tooltipData: getTooltipData(eventPoint, legendColors, chartData.fieldNames),
+          tooltipData: getTooltipData(eventPoint, legendColors, fieldNames),
         });
         pointNumber.current = eventPoint.pointNumber;
       }
@@ -124,11 +124,13 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
   // }
 
   return (
-    <VizLayout width={width} height={height} legend={getLegend(props, fieldDisplayValues)}>
-      {(vizWidth: number, vizHeight: number) => {
-        return (
-          <div className={styles.container} ref={containerRef}>
-            {/* <div style={{ position: "relative" }}>
+    <>
+      {/* {JSON.stringify(options)} */}
+      <VizLayout width={width} height={height} legend={getLegend(props, fieldDisplayValues)}>
+        {(vizWidth: number, vizHeight: number) => {
+          return (
+            <div className={styles.container} ref={containerRef}>
+              {/* <div style={{ position: "relative" }}>
               <LinkButton
                 // Legend could be to the right and there is no space between the button and the legend! Add spacing.
                 // This is also breaks layout when you open F12 as it shrinks the view, but it doesn't grow back?
@@ -138,87 +140,66 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
                 onClick={handleOnClickResetCamera}
               />
             </div> */}
-            <Plot
-              useResizeHandler
-              layout={{
-                width: vizWidth,
-                height: vizHeight,
-                autosize: true,
-                paper_bgcolor: "transparent",
-                // Plot resets on first color change. https://github.com/plotly/plotly.py/issues/3951.
-                // Possible solution at the end here: https://github.com/plotly/plotly.js/issues/6359.
-                // Explanation what this does: https://community.plotly.com/t/preserving-ui-state-like-zoom-in-dcc-graph-with-uirevision-with-dash/15793.
-                uirevision: "true",
-                showlegend: false,
-                margin: {
-                  t: 0,
-                  r: 0,
-                  b: 0,
-                  l: 0,
-                },
-                scene: {
-                  xaxis: {
-                    title: chartData.fieldNames[0],
-                    ...axisSettings,
+              <Plot
+                useResizeHandler
+                layout={{
+                  width: vizWidth,
+                  height: vizHeight,
+                  autosize: true,
+                  paper_bgcolor: "transparent",
+                  // Plot resets on first color change. https://github.com/plotly/plotly.py/issues/3951.
+                  // Possible solution at the end here: https://github.com/plotly/plotly.js/issues/6359.
+                  // Explanation what this does: https://community.plotly.com/t/preserving-ui-state-like-zoom-in-dcc-graph-with-uirevision-with-dash/15793.
+                  uirevision: "true",
+                  showlegend: false,
+                  margin: {
+                    t: 0,
+                    r: 0,
+                    b: 0,
+                    l: 0,
                   },
-                  yaxis: {
-                    title: chartData.fieldNames[1],
-                    ...axisSettings,
-                  },
-                  zaxis: {
-                    title: chartData.fieldNames[2],
-                    ...axisSettings,
-                  },
-                  // camera
-                  ...(camera.current !== undefined && { ...camera.current }),
-                },
-              }}
-              config={{
-                displayModeBar: false,
-              }}
-              data={
-                ...chartData.clusterData.map((data, index) => {
-                  return {
-                    type: "scatter3d",
-                    name: data.clusterLabel,
-                    x: data.x,
-                    y: data.y,
-                    z: data.z,
-                    mode: "markers",
-                    marker: {
-                      line: {
-                        color: fieldDisplayValues[index].display.color,
-                        // Line width broken: https://github.com/plotly/plotly.js/issues/3796
-                        width: 1,
-                        // width: options.lineWidth,
-                      },
-                      color: tinycolor(fieldDisplayValues[index].display.color).setAlpha(options.fillOpacity / 100).toRgbString(),
-                      size: options.pointSize,
+                  scene: {
+                    xaxis: {
+                      title: fieldNames[0],
+                      ...axisSettings,
                     },
-                    hoverinfo: 'none',
-                  }
-                })
-              }
-              onUpdate={onPlotlyUpdate}
-              onHover={onPlotlyPointHover}
-              onUnhover={onPlotlyPointUnhover}
-            />
-            {showTooltip ? (
-              <TooltipInPortal
-                key={Math.random()}
-                top={tooltip.tooltipTop}
-                className={styles.tooltipPortal}
-                left={tooltip.tooltipLeft}
-                unstyled={true}
-                applyPositionStyle={true}
-              >
-                <Cluster3DTooltipTable tooltipData={tooltip.tooltipData!} />
-              </TooltipInPortal>
-            ) : null}
-          </div>
-        );
-      }}
-    </VizLayout>
+                    yaxis: {
+                      title: fieldNames[1],
+                      ...axisSettings,
+                    },
+                    zaxis: {
+                      title: fieldNames[2],
+                      ...axisSettings,
+                    },
+                    // camera
+                    ...(camera.current !== undefined && { ...camera.current }),
+                  },
+                }}
+                config={{
+                  displayModeBar: false,
+                }}
+                data={plotlyData}
+                onUpdate={onPlotlyUpdate}
+                onHover={onPlotlyPointHover}
+                onUnhover={onPlotlyPointUnhover}
+              />
+              {showTooltip ? (
+                <TooltipInPortal
+                  key={Math.random()}
+                  top={tooltip.tooltipTop}
+                  className={styles.tooltipPortal}
+                  left={tooltip.tooltipLeft}
+                  unstyled={true}
+                  applyPositionStyle={true}
+                >
+                  <Cluster3DTooltipTable tooltipData={tooltip.tooltipData!} />
+                </TooltipInPortal>
+              ) : null}
+            </div>
+          );
+        }}
+      </VizLayout>
+    </>
   );
 };
 

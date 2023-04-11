@@ -1,16 +1,8 @@
-import { DataFrame } from '@grafana/data';
-
-interface ClusterData {
+export interface ClusterData {
   clusterLabel: string;
   x: number[];
   y: number[];
   z: number[];
-}
-
-export interface ChartData {
-  clusterData: ClusterData[];
-  legendData: DataFrame[];
-  fieldNames: string[];
 }
 
 interface Cluster3DTooltipDisplayField {

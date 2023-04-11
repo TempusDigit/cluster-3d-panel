@@ -19,7 +19,7 @@ export interface Cluster3DSeriesConfig extends HideableFieldConfig, AxisConfig {
 export interface RequiredCluster3DOptions {
   legend: Cluster3DLegendOptions;
   seriesMapping: SeriesMapping;
-  series: Cluster3DSeriesConfig;
+  series?: Cluster3DSeriesConfig;
   pointSize: number;
   // Line width broken: https://github.com/plotly/plotly.js/issues/3796
   // lineWidth: number;
