@@ -1,23 +1,19 @@
-import { AxisConfig, HideableFieldConfig, LegendDisplayMode, OptionsWithTooltip, SingleStatBaseOptions, VizLegendOptions } from '@grafana/ui';
-
-export interface Cluster3DLegendOptions extends VizLegendOptions {
-  separateLegendBySeries: boolean;
-}
+import { LegendDisplayMode, OptionsWithLegend, OptionsWithTooltip, VizLegendOptions } from '@grafana/ui';
 
 export enum SeriesMapping {
   Auto = 'auto',
   Manual = 'manual',
 }
 
-export interface Cluster3DSeriesConfig extends HideableFieldConfig, AxisConfig {
+export interface Cluster3DSeriesConfig {
   x?: string;
   y?: string;
   z?: string;
   clusterLabel?: string;
 }
 
-export interface RequiredCluster3DOptions {
-  legend: Cluster3DLegendOptions;
+export interface RequiredCluster3DOptions extends OptionsWithLegend {
+  separateClustersBySeries: boolean;
   seriesMapping: SeriesMapping;
   series?: Cluster3DSeriesConfig;
   pointSize: number;
@@ -26,14 +22,13 @@ export interface RequiredCluster3DOptions {
   fillOpacity: number;
 }
 
-export interface Cluster3DOptions extends RequiredCluster3DOptions, OptionsWithTooltip, SingleStatBaseOptions {}
+export interface Cluster3DOptions extends RequiredCluster3DOptions, OptionsWithTooltip {}
 
-export const defaultLegendConfig: Cluster3DLegendOptions = {
+export const defaultLegendConfig: VizLegendOptions = {
   displayMode: LegendDisplayMode.List,
   showLegend: true,
   placement: 'right',
   calcs: [],
-  separateLegendBySeries: false
 };
 
 export const defaultSeriesConfig: Cluster3DSeriesConfig = {
@@ -45,6 +40,7 @@ export const defaultSeriesConfig: Cluster3DSeriesConfig = {
 
 export const defaultCluster3DConfig: RequiredCluster3DOptions = {
   legend: defaultLegendConfig,
+  separateClustersBySeries: false,
   seriesMapping: SeriesMapping.Auto,
   series: defaultSeriesConfig,
   pointSize: 2,

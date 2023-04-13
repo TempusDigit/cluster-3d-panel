@@ -35,12 +35,20 @@ export const plugin = new PanelPlugin<Cluster3DOptions>(Cluster3DPanel)
         },
       },
     },
+    useCustomConfig: (builder) => {
+      commonOptionsBuilder.addHideFrom(builder);
+    },
   })
   .setPanelOptions((builder) => {
     commonOptionsBuilder.addTooltipOptions(builder, true);
     commonOptionsBuilder.addLegendOptions(builder, false);
 
     return builder
+      .addBooleanSwitch({
+        name: 'Separate clusters by series',
+        path: 'separateClustersBySeries',
+        defaultValue: defaultCluster3DConfig.separateClustersBySeries,
+      })
       .addRadio({
         path: 'seriesMapping',
         name: 'Series mapping',
@@ -75,12 +83,6 @@ export const plugin = new PanelPlugin<Cluster3DOptions>(Cluster3DPanel)
         name: 'Cluster name field',
         defaultValue: defaultSeriesConfig.clusterLabel,
         showIf: (cfg: Cluster3DOptions) => cfg.seriesMapping === SeriesMapping.Manual,
-      })
-      .addBooleanSwitch({
-        name: 'Separate legend by series',
-        path: 'legend.separateLegendBySeries',
-        category: ['Legend'],
-        showIf: (cfg) => cfg.legend.showLegend === true,
       })
       .addSliderInput({
         path: 'pointSize',

@@ -1,8 +1,8 @@
-import { DataFrame, Field, FieldType, ArrayVector, getFieldDisplayName, FALLBACK_COLOR, FieldConfigSource, FieldDisplay } from '@grafana/data';
+import { DataFrame, Field, FieldType, ArrayVector, getFieldDisplayName, FALLBACK_COLOR, FieldConfigSource, FieldDisplay, fieldMatchers } from '@grafana/data';
 import { Cluster3DSeriesConfig, SeriesMapping, defaultSeriesConfig } from 'models.gen';
 import { Data } from 'plotly.js';
 import tinycolor from 'tinycolor2';
-import { Cluster3DTooltipData, ClusterData } from 'types';
+import { Cluster3DTooltipData, ClusterData, HiddenClustersData } from 'types';
 
 const REQUIRED_FIELD_COUNT = 4;
 
@@ -100,16 +100,30 @@ export function mapSeries(series: DataFrame[], seriesConfig: Cluster3DSeriesConf
   return mappedSeries;
 }
 
-export function getClusterData(dataValid: boolean, series: DataFrame[], separateLegendBySeries: boolean): ClusterData[] {
+export function getHiddenClusterData(fieldConfig: FieldConfigSource<any>): HiddenClustersData {
+  for (const override of fieldConfig.overrides) {
+    const info = fieldMatchers.get(override.matcher.id);
+    if (info) {
+      for (const prop of override.properties) {
+        if (prop.id === "custom.hideFrom") {
+          return { clusterLabels: new Map(override.matcher.options.names.map((name: string) => [name, null])), hideConfig: prop.value};
+        }
+      }
+    }
+  }
+  return { clusterLabels: new Map(), hideConfig: fieldConfig.defaults.custom.hideFrom };
+}
+
+export function getClusterData(dataValid: boolean, series: DataFrame[], hiddenClustersData: HiddenClustersData, separateClustersBySeries: boolean): ClusterData[] {
   if (dataValid) {
-    const localChartData = new Map<string, { x: number[], y: number[], z: number[] }>();
+    const localChartData = new Map<string, { x: number[], y: number[], z: number[], visible: boolean }>();
     series.forEach(serie => {
       serie.fields[3].values.toArray().forEach((clusterLabel, i) => {
-        if (separateLegendBySeries) {
+        if (separateClustersBySeries) {
           clusterLabel = serie.refId + clusterLabel;
         }
         if (!localChartData.get(clusterLabel)) {
-          localChartData.set(clusterLabel, { x: [], y: [], z: [] });
+          localChartData.set(clusterLabel, { x: [], y: [], z: [], visible: !hiddenClustersData.clusterLabels.has(clusterLabel) });
         }
         const xyz = localChartData.get(clusterLabel);
         xyz?.x.push(serie.fields[0].values.get(i));
@@ -118,7 +132,7 @@ export function getClusterData(dataValid: boolean, series: DataFrame[], separate
       });
     });
     return Array.from(localChartData, (entry) => {
-      return { clusterLabel: entry[0], x: entry[1].x, y: entry[1].y, z: entry[1].z };
+      return { clusterLabel: entry[0], x: entry[1].x, y: entry[1].y, z: entry[1].z, visible: entry[1].visible };
     }).sort((a, b) => a.clusterLabel > b.clusterLabel ? 1 : -1);
   }
   return [];
@@ -160,21 +174,23 @@ export function getFieldNames(dataValid: boolean, firstSeries: DataFrame): strin
 export function getPlotlyData(dataValid: boolean, clusterData: ClusterData[], fieldDisplayValues: FieldDisplay[], fillOpacity: number, pointSize: number): Data[] {
   if (dataValid) {
     return clusterData.map((cluster, index) => {
+      const color = fieldDisplayValues[index].display.color;
       return {
         type: "scatter3d",
         name: cluster.clusterLabel,
         x: cluster.x,
         y: cluster.y,
         z: cluster.z,
+        visible: cluster.visible,
         mode: "markers",
         marker: {
           line: {
-            color: fieldDisplayValues[index].display.color,
+            color: color,
             // Line width broken: https://github.com/plotly/plotly.js/issues/3796
             width: 1,
             // width: options.lineWidth,
           },
-          color: tinycolor(fieldDisplayValues[index].display.color).setAlpha(fillOpacity / 100).toRgbString(),
+          color: tinycolor(color).setAlpha(fillOpacity / 100).toRgbString(),
           size: pointSize,
         },
         hoverinfo: 'none',

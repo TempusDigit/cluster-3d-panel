@@ -1,7 +1,7 @@
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { DataFrame, FALLBACK_COLOR, FieldDisplay, getFieldDisplayValues, GrafanaTheme2, PanelProps } from '@grafana/data';
-import { Cluster3DTooltipData, ClusterData } from 'types';
-import { TooltipDisplayMode, useStyles2, useTheme2, VizLayout, VizLegend, VizLegendItem } from '@grafana/ui';
+import { Cluster3DTooltipData, ClusterData, HiddenClustersData } from 'types';
+import { HideSeriesConfig, SeriesVisibilityChangeBehavior, TooltipDisplayMode, useStyles2, useTheme2, VizLayout, VizLegend, VizLegendItem, VizLegendOptions } from '@grafana/ui';
 import Plot, { Figure } from 'react-plotly.js';
 import { PanelDataErrorView } from '@grafana/runtime';
 import { css } from '@emotion/css';
@@ -9,7 +9,7 @@ import { useTooltip, useTooltipInPortal } from '@visx/tooltip';
 import { Camera, Data, PlotHoverEvent } from 'plotly.js';
 import Cluster3DTooltipTable from './Cluster3DTooltipTable';
 import { Cluster3DOptions, defaultLegendConfig } from 'models.gen';
-import { getClusterData, getFieldNames, getLegendData, getPlotlyData, getTooltipData, mapSeries } from 'utils';
+import { getClusterData, getFieldNames, getHiddenClusterData, getLegendData, getPlotlyData, getTooltipData, mapSeries } from 'utils';
 
 interface Props extends PanelProps<Cluster3DOptions> { }
 
@@ -31,11 +31,11 @@ const getStyles = (theme: GrafanaTheme2) => {
       border-radius: ${theme.shape.borderRadius()};
       z-index: ${theme.zIndex.tooltip};
     `,
-    resetCameraButton: css`
-      position: absolute;
-      right: 0;
-      z-index: ${theme.zIndex.tooltip};
-    `,
+    // resetCameraButton: css`
+    //   position: absolute;
+    //   right: 0;
+    //   z-index: ${theme.zIndex.tooltip};
+    // `,
   };
 };
 
@@ -44,7 +44,9 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
   const series = useMemo(() => mapSeries(data.series, options.series!, options.seriesMapping), [data.series, options.series, options.seriesMapping]);
   const dataValid = series.length > 0;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const clusterData = useMemo<ClusterData[]>(() => getClusterData(dataValid, series, options.legend.separateLegendBySeries), [dataValid, series, options.legend.separateLegendBySeries]);
+  const hiddenClustersData = useMemo<HiddenClustersData>(() => getHiddenClusterData(fieldConfig), [fieldConfig]);
+  const clusterData = useMemo<ClusterData[]>(() => getClusterData(dataValid, series, hiddenClustersData, options.separateClustersBySeries),
+    [dataValid, series, hiddenClustersData, options.separateClustersBySeries]);
   const legendData = useMemo<DataFrame[]>(() => getLegendData(dataValid, clusterData, fieldConfig), [dataValid, clusterData, fieldConfig]);
   const fieldNames = useMemo<string[]>(() => getFieldNames(dataValid, series[0]), [dataValid, series]);
   const theme = useTheme2();
@@ -52,39 +54,36 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
     fieldConfig,
     reduceOptions: { calcs: defaultLegendConfig.calcs },
     data: legendData,
+    // data: series,
     theme: theme,
     replaceVariables,
     timeZone,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [fieldConfig, legendData, theme]);
+  const legend = useMemo(() => getLegend(options.legend, fieldDisplayValues, hiddenClustersData), [options.legend, fieldDisplayValues, hiddenClustersData]);
   const plotlyData = useMemo<Data[]>(() => getPlotlyData(dataValid, clusterData, fieldDisplayValues, options.fillOpacity, options.pointSize),
     [dataValid, clusterData, fieldDisplayValues, options.fillOpacity, options.pointSize]);
   const styles = useStyles2(getStyles);
   const tooltip = useTooltip<Cluster3DTooltipData>();
-  const { containerRef, TooltipInPortal } = useTooltipInPortal({
-    detectBounds: true,
-    scroll: true,
-  });
+  const { containerRef, TooltipInPortal } = useTooltipInPortal({ detectBounds: true });
   const initialCamera = useRef<Partial<Camera>>();
   // let [camera, setCamera] = useState<Partial<Camera>>();
   const camera = useRef<Partial<Camera>>();
   const pointNumber = useRef<number>();
 
-  const onPlotlyPointHover = useCallback(
-    (event: PlotHoverEvent) => {
-      const eventPoint = event.points[0] as any;
-      if (pointNumber.current !== eventPoint.pointNumber) {
-        tooltip.showTooltip({
-          tooltipLeft: eventPoint.bbox.x0,
-          tooltipTop: eventPoint.bbox.y0,
-          tooltipData: getTooltipData(eventPoint, legendColors, fieldNames),
-        });
-        pointNumber.current = eventPoint.pointNumber;
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tooltip]
-  );
+  const onPlotlyPointHover = (event: PlotHoverEvent) => {
+    const eventPoint = event.points[0] as any;
+    if (pointNumber.current !== eventPoint.pointNumber) {
+      console.log(eventPoint.bbox.x0);
+      console.log(eventPoint);
+      tooltip.showTooltip({
+        tooltipLeft: eventPoint.bbox.x0,
+        tooltipTop: eventPoint.bbox.y0,
+        tooltipData: getTooltipData(eventPoint, legendColors, fieldNames),
+      });
+      pointNumber.current = eventPoint.pointNumber;
+    }
+  };
 
   if (!dataValid) {
     return <PanelDataErrorView panelId={id} fieldConfig={fieldConfig} data={data} />;
@@ -126,7 +125,7 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
   return (
     <>
       {/* {JSON.stringify(options)} */}
-      <VizLayout width={width} height={height} legend={getLegend(props, fieldDisplayValues)}>
+      <VizLayout width={width} height={height} legend={legend}>
         {(vizWidth: number, vizHeight: number) => {
           return (
             <div className={styles.container} ref={containerRef}>
@@ -203,26 +202,38 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
   );
 };
 
-function getLegend(props: Props, displayValues: FieldDisplay[]) {
-  const legendOptions = props.options.legend ?? defaultLegendConfig;
+function getLegend(legendOptions: VizLegendOptions, displayValues: FieldDisplay[], hiddenClustersData: HiddenClustersData) {
+  const localLegendOptions = legendOptions ?? defaultLegendConfig;
 
-  if (legendOptions.showLegend === false) {
+  if (localLegendOptions.showLegend === false) {
     return undefined;
   }
 
   const legendItems: VizLegendItem[] = displayValues
-    .map<VizLegendItem>((value: FieldDisplay) => {
+    .map<VizLegendItem | undefined>((value: FieldDisplay) => {
+      // is null coalescing required here?
       const display = value.display;
+      const label = display.title ?? '';
+      let hideFrom: HideSeriesConfig | undefined;
+      if (hiddenClustersData.clusterLabels.has(label)) {
+        hideFrom = hiddenClustersData.hideConfig;
+      }
+      // console.log(hideFrom, Boolean(hideFrom?.viz));
+      if (hideFrom?.legend) {
+        return undefined;
+      }
       return {
         color: display.color ?? FALLBACK_COLOR,
-        label: display.title ?? '',
+        label,
         yAxis: 1,
+        disabled: Boolean(hideFrom?.viz),
       };
-    });
+    }).filter((item): item is VizLegendItem => !!item);
 
   return (
     <VizLegend
       items={legendItems}
+      seriesVisibilityChangeBehavior={SeriesVisibilityChangeBehavior.Hide}
       placement={legendOptions.placement}
       displayMode={legendOptions.displayMode}
     />
