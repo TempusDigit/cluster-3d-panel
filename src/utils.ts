@@ -1,8 +1,9 @@
 import { DataFrame, Field, FieldType, ArrayVector, getFieldDisplayName, FALLBACK_COLOR, FieldConfigSource, FieldDisplay, fieldMatchers } from '@grafana/data';
+import { SeriesVisibilityChangeMode } from '@grafana/ui';
 import { Cluster3DSeriesConfig, SeriesMapping, defaultSeriesConfig } from 'models.gen';
 import { Data } from 'plotly.js';
 import tinycolor from 'tinycolor2';
-import { Cluster3DTooltipData, ClusterData, HiddenClustersData } from 'types';
+import { Cluster3DTooltipData, ClusterData, VisibleClustersData } from 'types';
 
 const REQUIRED_FIELD_COUNT = 4;
 
@@ -16,10 +17,12 @@ function getMappedFieldIndexes(series: DataFrame[], seriesConfig: Cluster3DSerie
       if (name === seriesConfig.x) {
         usedFieldIndexes[0] = i;
         fieldIndexUsed[i] = true;
-      } else if (name === seriesConfig.y) {
+      }
+      if (name === seriesConfig.y) {
         usedFieldIndexes[1] = i;
         fieldIndexUsed[i] = true;
-      } else if (name === seriesConfig.z) {
+      }
+      if (name === seriesConfig.z) {
         usedFieldIndexes[2] = i;
         fieldIndexUsed[i] = true;
       }
@@ -87,12 +90,12 @@ export function mapSeries(series: DataFrame[], seriesConfig: Cluster3DSeriesConf
           break;
       }
       if (formattedField) {
-        // Čia gal galima atiduoti tik dalį duomenų, kiti duomenys gal nereikalingi
+        // Maybe return only some properties as not all data is required?
         fields.push(formattedField);
       }
     }
     mappedSeries.push({
-      // Čia gal galima atiduoti tik dalį duomenų, kiti duomenys gal nereikalingi
+      // Maybe return only some properties as not all data is required?
       ...frame,
       fields: fields,
     });
@@ -100,30 +103,18 @@ export function mapSeries(series: DataFrame[], seriesConfig: Cluster3DSeriesConf
   return mappedSeries;
 }
 
-export function getHiddenClusterData(fieldConfig: FieldConfigSource<any>): HiddenClustersData {
-  for (const override of fieldConfig.overrides) {
-    const info = fieldMatchers.get(override.matcher.id);
-    if (info) {
-      for (const prop of override.properties) {
-        if (prop.id === "custom.hideFrom") {
-          return { clusterLabels: new Map(override.matcher.options.names.map((name: string) => [name, null])), hideConfig: prop.value};
-        }
-      }
-    }
-  }
-  return { clusterLabels: new Map(), hideConfig: fieldConfig.defaults.custom.hideFrom };
-}
-
-export function getClusterData(dataValid: boolean, series: DataFrame[], hiddenClustersData: HiddenClustersData, separateClustersBySeries: boolean): ClusterData[] {
+export function getClusterData(dataValid: boolean, series: DataFrame[], separateClustersBySeries: boolean): ClusterData[] {
   if (dataValid) {
-    const localChartData = new Map<string, { x: number[], y: number[], z: number[], visible: boolean }>();
+    const localChartData = new Map<string, { x: number[], y: number[], z: number[] }>();
     series.forEach(serie => {
-      serie.fields[3].values.toArray().forEach((clusterLabel, i) => {
+      serie.fields[3].values.toArray().forEach((clusterLabel: string | number, i) => {
+        clusterLabel = clusterLabel.toString();
         if (separateClustersBySeries) {
           clusterLabel = serie.refId + clusterLabel;
         }
         if (!localChartData.get(clusterLabel)) {
-          localChartData.set(clusterLabel, { x: [], y: [], z: [], visible: !hiddenClustersData.clusterLabels.has(clusterLabel) });
+          // console.log(clusterLabel, visibleClustersData.clusterLabels, visibleClustersData.clusterLabels.has(clusterLabel));
+          localChartData.set(clusterLabel, { x: [], y: [], z: [] });
         }
         const xyz = localChartData.get(clusterLabel);
         xyz?.x.push(serie.fields[0].values.get(i));
@@ -132,7 +123,7 @@ export function getClusterData(dataValid: boolean, series: DataFrame[], hiddenCl
       });
     });
     return Array.from(localChartData, (entry) => {
-      return { clusterLabel: entry[0], x: entry[1].x, y: entry[1].y, z: entry[1].z, visible: entry[1].visible };
+      return { clusterLabel: entry[0], x: entry[1].x, y: entry[1].y, z: entry[1].z };
     }).sort((a, b) => a.clusterLabel > b.clusterLabel ? 1 : -1);
   }
   return [];
@@ -171,7 +162,28 @@ export function getFieldNames(dataValid: boolean, firstSeries: DataFrame): strin
   return [];
 }
 
-export function getPlotlyData(dataValid: boolean, clusterData: ClusterData[], fieldDisplayValues: FieldDisplay[], fillOpacity: number, pointSize: number): Data[] {
+export function getVisibleClusterData(fieldConfig: FieldConfigSource<any>, clusterData: ClusterData[]): VisibleClustersData {
+  for (const override of fieldConfig.overrides) {
+    const info = fieldMatchers.get(override.matcher.id);
+    if (info) {
+      for (const prop of override.properties) {
+        if (prop.id === "custom.hideFrom") {
+          return { clusterLabels: new Map(override.matcher.options.names.map((name: string) => [name, null])), hideConfig: prop.value };
+        }
+      }
+    }
+  }
+  return { clusterLabels: new Map(clusterData.map(cluster => [cluster.clusterLabel, null])), hideConfig: fieldConfig.defaults.custom.hideFrom };
+}
+
+export function getPlotlyData(
+  dataValid: boolean,
+  clusterData: ClusterData[],
+  fieldDisplayValues: FieldDisplay[],
+  visibleClustersData: VisibleClustersData,
+  fillOpacity: number,
+  pointSize: number
+): Data[] {
   if (dataValid) {
     return clusterData.map((cluster, index) => {
       const color = fieldDisplayValues[index].display.color;
@@ -181,7 +193,7 @@ export function getPlotlyData(dataValid: boolean, clusterData: ClusterData[], fi
         x: cluster.x,
         y: cluster.y,
         z: cluster.z,
-        visible: cluster.visible,
+        visible: visibleClustersData.clusterLabels.has(cluster.clusterLabel),
         mode: "markers",
         marker: {
           line: {
@@ -208,4 +220,11 @@ export function getTooltipData(eventPoint: any, legendColors: Map<string, string
     y: { fieldName: fieldNames[1], value: eventPoint.y },
     z: { fieldName: fieldNames[2], value: eventPoint.z },
   };
-}
+};
+
+export function mapMouseEventToMode(event: React.MouseEvent): SeriesVisibilityChangeMode {
+  if (event.ctrlKey || event.metaKey || event.shiftKey) {
+    return SeriesVisibilityChangeMode.AppendToSelection;
+  }
+  return SeriesVisibilityChangeMode.ToggleSelection;
+};

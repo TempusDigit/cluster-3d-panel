@@ -21,7 +21,7 @@ export const plugin = new PanelPlugin<Cluster3DOptions>(Cluster3DPanel)
       FieldConfigProperty.NoValue,
       FieldConfigProperty.Links,
       FieldConfigProperty.Mappings,
-      FieldConfigProperty.Thresholds
+      FieldConfigProperty.Thresholds,
     ],
     standardOptions: {
       [FieldConfigProperty.Color]: {
