@@ -5,8 +5,25 @@ import { Data } from 'plotly.js';
 import tinycolor from 'tinycolor2';
 import { Cluster3DTooltipData, ClusterData, VisibleClustersData } from 'types';
 
+/**
+ * Denotes how many fields are required for the visualization to work. The first three fields represent x, y and z values (in order) and the last field represents the cluster label.
+*/
 const REQUIRED_FIELD_COUNT = 4;
 
+/**
+ * Finds indexes of fields that should be used.
+ * 
+ * @remarks
+ * If `mappingType` is `SeriesMapping.Auto`, searches for fields with names "x", "y", "z", "clusterLabel" (the seriesConfig object
+ * is `{ x: "x", y: "y", z: "z", clusterLabel: "clusterLabel" }` by default) and stores the indexes of those fields in an array.
+ * If some fields are missing, the first unused field is taken. This could lead to a problem if the chosen field type is not numeric or of string type.
+ * 
+ * If `mappingType` is `SeriesMapping.Manual`, searches for user specified field names. For example, the user has selected the x field to be the field "aaa" from the data
+ * (the seriesConfig object should be `{ x: "aaa", .... }`), the method searches for this field name and stores the index. If the any of the user specified fields are not found,
+ * an empty array is returned.
+ * 
+ * @returns Returns indexes of fields that should be used or an empty array.
+ */
 function getMappedFieldIndexes(series: DataFrame[], seriesConfig: Cluster3DSeriesConfig, mappingType: SeriesMapping): number[] {
   const usedFieldIndexes: number[] = new Array(REQUIRED_FIELD_COUNT).fill(null);
   const fieldIndexUsed: boolean[] = new Array(series[0].fields.length).fill(false);
@@ -36,6 +53,7 @@ function getMappedFieldIndexes(series: DataFrame[], seriesConfig: Cluster3DSerie
     if (usedFieldIndexes[i] == null) {
       if (mappingType === SeriesMapping.Auto) {
         const firstUnusedIndex = fieldIndexUsed.indexOf(false);
+        // A check for field type might be required here.
         usedFieldIndexes[i] = firstUnusedIndex;
         fieldIndexUsed[firstUnusedIndex] = true;
       } else {
@@ -46,6 +64,15 @@ function getMappedFieldIndexes(series: DataFrame[], seriesConfig: Cluster3DSerie
   return usedFieldIndexes;
 }
 
+/**
+ * Gets fields based on mapping.
+ * 
+ * @remarks
+ * Fields that should be used are found with `getMappedFieldIndexes(...)`, which returns the indexes of the fields. Then the `series` object is filtered to only select elements with 
+ * those indexes. Fields that are numeric are also formatted.
+ * 
+ * @returns Returns a `DataFrame` containing fields that match the `SeriesConfig`.
+ */
 export function mapSeries(series: DataFrame[], seriesConfig: Cluster3DSeriesConfig, mappingType: SeriesMapping): DataFrame[] {
   if (!series.length || series.some((serie) => serie.fields.length < REQUIRED_FIELD_COUNT)) {
     return [];
@@ -103,17 +130,24 @@ export function mapSeries(series: DataFrame[], seriesConfig: Cluster3DSeriesConf
   return mappedSeries;
 }
 
+/**
+ * Reformats multiple series with `clusterLabel` fields into array of data separated by cluster labels.
+ * 
+ * @remarks
+ * The field that has been mapped (designated) as the `clusterLabel` field of a serie is iterated over and each unique `clusterLabel` value is put into a hashmap with the
+ * `cluster label` as the key. The mapped x, y and z values are appened as values to that key. This is done for each serie as there can be multiple data sources.
+ */
 export function getClusterData(dataValid: boolean, series: DataFrame[], separateClustersBySeries: boolean): ClusterData[] {
   if (dataValid) {
     const localChartData = new Map<string, { x: number[], y: number[], z: number[] }>();
     series.forEach(serie => {
+      // serie.fields[3] because the series has been mapped to only have 4 fields and so the last one (index 3 counting from 0) is the cluster labal field.
       serie.fields[3].values.toArray().forEach((clusterLabel: string | number, i) => {
         clusterLabel = clusterLabel.toString();
         if (separateClustersBySeries) {
           clusterLabel = serie.refId + clusterLabel;
         }
         if (!localChartData.get(clusterLabel)) {
-          // console.log(clusterLabel, visibleClustersData.clusterLabels, visibleClustersData.clusterLabels.has(clusterLabel));
           localChartData.set(clusterLabel, { x: [], y: [], z: [] });
         }
         const xyz = localChartData.get(clusterLabel);
@@ -129,6 +163,16 @@ export function getClusterData(dataValid: boolean, series: DataFrame[], separate
   return [];
 }
 
+/**
+ * Gets the color of a field from the panel options object.
+ * 
+ * @remarks
+ * There is a standard Grafana method for this. However, the standard method matches overrides assigned to field values straight from the data source. The cluster 3d panel transforms 
+ * the data and stores it inside the panel. This means you have to extract the overrides manually.
+ * 
+ * @returns
+ * The field color from the panel overrides or a default value that informs grafana to assign a color from the default color palette.
+ */
 function getFieldColor(displayName: string, fieldConfig: FieldConfigSource) {
   for (const override of fieldConfig.overrides) {
     if (override.matcher.id === "byName" && override.matcher.options === displayName.toString()) {
@@ -142,6 +186,12 @@ function getFieldColor(displayName: string, fieldConfig: FieldConfigSource) {
   return fieldConfig.defaults.color;
 }
 
+/**
+ * Creates a `DataFrame[]` where each field name corresponds to a cluster label.
+ * 
+ * @remarks
+ * The values are left empty as the returned DataFrame[] is only used to generate the Grafana legend which only uses the field names. 
+ */
 export function getLegendData(dataValid: boolean, clusterData: ClusterData[], fieldConfig: FieldConfigSource<any>): DataFrame[] {
   if (dataValid) {
     return [{
@@ -155,6 +205,13 @@ export function getLegendData(dataValid: boolean, clusterData: ClusterData[], fi
   return [];
 }
 
+/**
+ * @remarks
+ * This method is used to get field labels of the mapped series for the 3D plot axis labels. The returned field names are also used to display field names in the point hover tooltip.
+ * 
+ * @returns
+ * Returns field names of the first series.
+ */
 export function getFieldNames(dataValid: boolean, firstSeries: DataFrame): string[] {
   if (dataValid) {
     return firstSeries.fields.map(field => field.name);
@@ -162,6 +219,15 @@ export function getFieldNames(dataValid: boolean, firstSeries: DataFrame): strin
   return [];
 }
 
+/**
+ * Finds which fields are visible and the `hideConfig` object which determines if the field should be displayed in the plot and/or legend.
+ * 
+ * @remarks
+ * The hide series overrides are not matched to the transformed data that the panel uses so the visibility data needs to be extraced manually.
+ * 
+ * @returns
+ * Returns a hashmap of visible field names as keys and the `hideConfig` object.
+ */
 export function getVisibleClusterData(fieldConfig: FieldConfigSource<any>, clusterData: ClusterData[]): VisibleClustersData {
   for (const override of fieldConfig.overrides) {
     const info = fieldMatchers.get(override.matcher.id);
@@ -176,6 +242,9 @@ export function getVisibleClusterData(fieldConfig: FieldConfigSource<any>, clust
   return { clusterLabels: new Map(clusterData.map(cluster => [cluster.clusterLabel, null])), hideConfig: fieldConfig.defaults.custom.hideFrom };
 }
 
+/**
+ * Unrolls `clusterData` and other values into a plotly `Data` array.
+ */
 export function getPlotlyData(
   dataValid: boolean,
   clusterData: ClusterData[],
@@ -212,6 +281,9 @@ export function getPlotlyData(
   return [];
 };
 
+/**
+ * Constructs tooltip data from Plotly hover event data and manually matched legend colors.
+ */
 export function getTooltipData(eventPoint: any, legendColors: Map<string, string>, fieldNames: string[]): Cluster3DTooltipData {
   return {
     color: legendColors.get(eventPoint.data.name.toString()) ?? FALLBACK_COLOR,
@@ -222,6 +294,9 @@ export function getTooltipData(eventPoint: any, legendColors: Map<string, string
   };
 };
 
+/**
+ * Method copied straight from Grafana source code which is required by the `VizLegend` component.
+ */
 export function mapMouseEventToMode(event: React.MouseEvent): SeriesVisibilityChangeMode {
   if (event.ctrlKey || event.metaKey || event.shiftKey) {
     return SeriesVisibilityChangeMode.AppendToSelection;

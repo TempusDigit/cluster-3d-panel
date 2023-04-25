@@ -230,7 +230,6 @@ function getLegend(legendOptions: VizLegendOptions, displayValues: FieldDisplay[
       if (!visibleClustersData.clusterLabels.has(label)) {
         hideFrom = visibleClustersData.hideConfig;
       }
-      // console.log(label, hideFrom);
       if (hideFrom?.legend) {
         return undefined;
       }
