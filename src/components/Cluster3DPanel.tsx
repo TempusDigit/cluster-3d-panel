@@ -135,7 +135,12 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
     }
   }
 
-  // Tries to save Plotly camera position. However, Plotly has an issue with zooming.
+  /**
+   * Tries to save Plotly camera position.
+   * 
+   * @remarks
+   * Plotly has an issue with zooming.
+   */
   const onPlotlyUpdate = (figure: Readonly<Figure>) => {
     if (figure.layout.scene?.camera !== undefined) {
       if (initialCamera.current === undefined) {
