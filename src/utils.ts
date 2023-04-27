@@ -7,7 +7,7 @@ import { Cluster3DTooltipData, ClusterData, VisibleClustersData } from 'types';
 
 /**
  * Denotes how many fields are required for the visualization to work. The first three fields represent x, y and z values (in order) and the last field represents the cluster label.
-*/
+ */
 const REQUIRED_FIELD_COUNT = 4;
 
 /**
