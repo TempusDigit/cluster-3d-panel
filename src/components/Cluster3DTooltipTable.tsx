@@ -26,6 +26,9 @@ const getSeriesTableRowStyles = (theme: GrafanaTheme2) => {
     };
 };
 
+/**
+ * Creates custom layout for Grafana tooltip.
+ */
 const Cluster3DTooltipTable = ({ tooltipData }: Cluster3DTooltipTableProps) => {
     const styles = useStyles2(getSeriesTableRowStyles);
 

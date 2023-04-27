@@ -10,8 +10,8 @@ import { Camera, Data, PlotHoverEvent } from 'plotly.js';
 import Cluster3DTooltipTable from './Cluster3DTooltipTable';
 import { Cluster3DOptions, defaultLegendConfig } from 'models.gen';
 import { getClusterData, getFieldNames, getLegendData, getPlotlyData, getTooltipData, getVisibleClusterData, mapSeries } from 'utils';
-import { VizLegend } from './VizLegend';
 import { seriesVisibilityConfigFactory } from 'SeriesVisibilityConfigFactory';
+import { VizLegend } from './copied/VizLegend';
 
 interface Props extends PanelProps<Cluster3DOptions> { }
 
@@ -40,13 +40,20 @@ const getStyles = (theme: GrafanaTheme2) => {
 
 export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
   const { data, id, fieldConfig, timeZone, replaceVariables, width, height, options, onFieldConfigChange } = props;
+  // Filters fields down to four that represent x, y, z and clusterLabel fields (user can choose which field is selected as each).
   const series = useMemo(() => mapSeries(data.series, options.series!, options.seriesMapping), [data.series, options.series, options.seriesMapping]);
+  // Further methods require a non empty serie array.
   const dataValid = series.length > 0;
+  // Joined series into one array and each element in array holds the points of one cluster. useMemo is used so that the value is recalculated only if one of the dependencies changes
+  // instead of every render.
   const clusterData = useMemo<ClusterData[]>(() => getClusterData(dataValid, series, options.separateClustersBySeries),
     [dataValid, series, options.separateClustersBySeries]);
+  // Unique cluster labels.
   const legendData = useMemo<DataFrame[]>(() => getLegendData(dataValid, clusterData, fieldConfig), [dataValid, clusterData, fieldConfig]);
+  // The display names of x, y, z and clusterLabel fields. For example, user can select a field named "G" as the x field, so that axis should display "G".
   const fieldNames = useMemo<string[]>(() => getFieldNames(dataValid, series[0]), [dataValid, series]);
   const theme = useTheme2();
+  // Formats data for use with Grafana UI components.
   const fieldDisplayValues = useMemo(() => getFieldDisplayValues({
     fieldConfig,
     reduceOptions: { calcs: defaultLegendConfig.calcs },
@@ -57,21 +64,26 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [fieldConfig, legendData, theme]);
 
+  // This method is taken from the PanelWraper component, which applies series visibility changes to the original data and which is not exposed to a panel directly. Therefore, it
+  // needed to be copied here to apply visibility changes to transformed data.
   const onToggleSeriesVisibility = useCallback((label: string, mode: SeriesVisibilityChangeMode) => {
     onFieldConfigChange(seriesVisibilityConfigFactory(label, mode, fieldConfig, legendData));
   }, [onFieldConfigChange, fieldConfig, legendData]);
 
+  // Extracts which clusters should be shown from the overrides.
   const visibleClustersData = useMemo<VisibleClustersData>(() => getVisibleClusterData(fieldConfig, clusterData), [fieldConfig, clusterData]);
   const legend = useMemo(() => getLegend(options.legend, fieldDisplayValues, visibleClustersData, onToggleSeriesVisibility),
     [options.legend, fieldDisplayValues, visibleClustersData, onToggleSeriesVisibility]);
+  // Formats a ClusterData array into a plotly Data array.
   const plotlyData = useMemo<Data[]>(() => getPlotlyData(dataValid, clusterData, fieldDisplayValues, visibleClustersData, options.fillOpacity, options.pointSize),
     [dataValid, clusterData, fieldDisplayValues, visibleClustersData, options.fillOpacity, options.pointSize]);
   const styles = useStyles2(getStyles);
+  // Grafana tooltip hook.
   const tooltip = useTooltip<Cluster3DTooltipData>();
   const { containerRef, TooltipInPortal } = useTooltipInPortal({ detectBounds: true });
   const initialCamera = useRef<Partial<Camera>>();
-  // let [camera, setCamera] = useState<Partial<Camera>>();
   const camera = useRef<Partial<Camera>>();
+
   const mouseOverPlotlyPlot = useRef<boolean>(false);
   const lastHoverPointNumber = useRef<number>();
 
@@ -113,12 +125,17 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
 
   const onPlotlyPointHover = (event: PlotHoverEvent) => {
     const eventPoint = event.points[0] as any;
+    // Hovering over a Plotly point and moving the mouse repeatedly fires the event which in turn rerenders the component as the Grafana tooltip is shown. Storing the last hovered
+    // point and checking if it's different on a point hover prevents the rerender loop. A check on the div component if the mouse is over it is required as a panel can exist in two
+    // places at the same time (different instances) - in the dashboard and in the edit mode and the Plotly chart in the dashboard would react to events, even though the mouse is
+    // hovering over a Plotly chart in the edit mode.
     if (lastHoverPointNumber.current !== eventPoint.pointNumber && mouseOverPlotlyPlot.current) {
       lastHoverPointNumber.current = eventPoint.pointNumber;
       onMouseMoveOverPlotlyPoint(eventPoint);
     }
   }
 
+  // Tries to save Plotly camera position. However, Plotly has an issue with zooming.
   const onPlotlyUpdate = (figure: Readonly<Figure>) => {
     if (figure.layout.scene?.camera !== undefined) {
       if (initialCamera.current === undefined) {
@@ -137,6 +154,7 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
   //   setCamera({ ...initialCamera.current });
   // }
 
+  // The VizLayout component is required so that the legend is rendered and is positioned correctly.
   return (
     <VizLayout width={width} height={height} legend={legend}>
       {(vizWidth: number, vizHeight: number) => {
@@ -183,7 +201,6 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
                     title: fieldNames[2],
                     ...axisSettings,
                   },
-                  // camera
                   ...(camera.current !== undefined && { ...camera.current }),
                 },
               }}
@@ -215,7 +232,18 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
   );
 };
 
-function getLegend(legendOptions: VizLegendOptions, displayValues: FieldDisplay[], visibleClustersData: VisibleClustersData, onToggleSeriesVisibility: (label: string, mode: SeriesVisibilityChangeMode) => void) {
+/**
+ * Creates the Grafana legend component.
+ * 
+ * @remarks
+ * Standard Grafana panels seem to write their own getLegend method.
+ */
+function getLegend(
+  legendOptions: VizLegendOptions,
+  displayValues: FieldDisplay[],
+  visibleClustersData: VisibleClustersData,
+  onToggleSeriesVisibility: (label: string, mode: SeriesVisibilityChangeMode) => void
+) {
   const localLegendOptions = legendOptions ?? defaultLegendConfig;
 
   if (localLegendOptions.showLegend === false) {
@@ -241,6 +269,9 @@ function getLegend(legendOptions: VizLegendOptions, displayValues: FieldDisplay[
       };
     }).filter((item): item is VizLegendItem => !!item);
 
+  // The VizLegend component and the components it used needed to be copied (they are in the components/copied folder) because the onToggleSeriesVisibility property needed to be added.
+  // It was added, because otherwise the component would use a method of the same name from the panel wrapper which only works on the original data whereas we need to work on the
+  // data that has been transformed.
   return (
     <VizLayout.Legend placement={legendOptions.placement} width={legendOptions.width}>
       <VizLegend

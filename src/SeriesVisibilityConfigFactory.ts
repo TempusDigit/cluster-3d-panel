@@ -16,6 +16,12 @@ import { SeriesVisibilityChangeMode } from '@grafana/ui';
 const displayOverrideRef = 'hideSeriesFrom';
 const isHideSeriesOverride = isSystemOverrideWithRef(displayOverrideRef);
 
+/**
+ * Applies series visibility overrides.
+ * 
+ * @remarks
+ * This method was copied from the source code as it is not exported.
+ */
 export function seriesVisibilityConfigFactory(
   label: string,
   mode: SeriesVisibilityChangeMode,
