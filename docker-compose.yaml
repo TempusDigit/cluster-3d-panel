@@ -6,9 +6,9 @@ services:
     build:
       context: ./.config
       args:
-        grafana_version: ${GRAFANA_VERSION:-9.3.8}
+        grafana_version: ${GRAFANA_VERSION:-9.5.2}
     ports:
-      - 3000:3000/tcp
+      - "3000:3000/tcp"
     volumes:
       - ./dist:/var/lib/grafana/plugins/cluster-3d-panel
       - ./provisioning:/etc/grafana/provisioning
