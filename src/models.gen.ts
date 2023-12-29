@@ -36,7 +36,7 @@ export const defaultSeriesConfig: Cluster3DSeriesConfig = {
   y: 'y',
   z: 'z',
   clusterLabel: 'clusterLabel'
-}
+};
 
 export const defaultCluster3DConfig: RequiredCluster3DOptions = {
   legend: defaultLegendConfig,

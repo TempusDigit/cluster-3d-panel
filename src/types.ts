@@ -1,4 +1,4 @@
-import { HideSeriesConfig, LegendDisplayMode, LegendPlacement, SeriesVisibilityChangeBehavior, SeriesVisibilityChangeMode, VizLegendItem } from "@grafana/ui";
+import { HideSeriesConfig, LegendDisplayMode, LegendPlacement, SeriesVisibilityChangeBehavior, SeriesVisibilityChangeMode, VizLegendItem } from '@grafana/ui';
 
 export interface ClusterData {
   clusterLabel: string;

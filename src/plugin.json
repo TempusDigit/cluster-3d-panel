@@ -5,9 +5,9 @@
   "id": "cluster-3d-panel",
   "info": {
     "keywords": ["panel"],
-    "description": "",
+    "description": "3D cluster graph panel plugin",
     "author": {
-      "name": "Singletonas"
+      "name": "Singleton labs"
     },
     "logos": {
       "small": "img/logo.svg",

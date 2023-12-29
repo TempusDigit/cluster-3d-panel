@@ -1,14 +1,17 @@
-version: '3.0'
+version: "3.0"
 
 services:
   grafana:
-    container_name: 'cluster-3d-panel'
+    container_name: "cluster-3d-panel"
+    platform: "linux/amd64"
     build:
-      context: ./.config
+      context: "./.config"
       args:
-        grafana_version: ${GRAFANA_VERSION:-9.5.2}
+        GRAFANA_IMAGE: ${GRAFANA_IMAGE}
+        GRAFANA_VERSION: ${GRAFANA_VERSION}
+        GRAFANA_PORT: ${GRAFANA_PORT}
     ports:
-      - "3000:3000/tcp"
+      - "${GRAFANA_PORT}:${GRAFANA_PORT}"
     volumes:
-      - ./dist:/var/lib/grafana/plugins/cluster-3d-panel
-      - ./provisioning:/etc/grafana/provisioning
+      - "./dist:/var/lib/grafana/plugins/cluster-3d-panel"
+      - "./provisioning:/etc/grafana/provisioning"

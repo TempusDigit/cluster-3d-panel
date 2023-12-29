@@ -2,11 +2,12 @@ import React, { useCallback, useMemo, useRef } from 'react';
 import { DataFrame, FALLBACK_COLOR, FieldDisplay, getFieldDisplayValues, GrafanaTheme2, PanelProps } from '@grafana/data';
 import { Cluster3DTooltipData, ClusterData, VisibleClustersData } from 'types';
 import { HideSeriesConfig, SeriesVisibilityChangeBehavior, SeriesVisibilityChangeMode, TooltipDisplayMode, useStyles2, useTheme2, VizLayout, VizLegendItem, VizLegendOptions } from '@grafana/ui';
-import Plot, { Figure } from 'react-plotly.js';
+import { Figure } from 'react-plotly.js';
+import Plotly, { Camera, Data, PlotHoverEvent } from 'plotly.js/dist/plotly-custom.min.js';
+import createPlotlyComponent from 'react-plotly.js/factory';
 import { PanelDataErrorView } from '@grafana/runtime';
 import { css } from '@emotion/css';
 import { useTooltip, useTooltipInPortal } from '@visx/tooltip';
-import { Camera, Data, PlotHoverEvent } from 'plotly.js';
 import Cluster3DTooltipTable from './Cluster3DTooltipTable';
 import { Cluster3DOptions, defaultLegendConfig } from 'models.gen';
 import { getClusterData, getFieldNames, getLegendData, getPlotlyData, getTooltipData, getVisibleClusterData, mapSeries } from 'utils';
@@ -14,6 +15,8 @@ import { seriesVisibilityConfigFactory } from 'SeriesVisibilityConfigFactory';
 import { VizLegend } from './copied/VizLegend';
 
 interface Props extends PanelProps<Cluster3DOptions> { }
+
+const Plot = createPlotlyComponent(Plotly);
 
 const getStyles = (theme: GrafanaTheme2) => {
   return {
@@ -42,7 +45,7 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
   const { data, id, fieldConfig, timeZone, replaceVariables, width, height, options, onFieldConfigChange } = props;
   // Filters fields down to four that represent x, y, z and clusterLabel fields (user can choose which field is selected as each).
   const series = useMemo(() => mapSeries(data.series, options.series!, options.seriesMapping), [data.series, options.series, options.seriesMapping]);
-  // Further methods require a non empty serie array.
+  // Further methods require a non empty series array.
   const dataValid = series.length > 0;
   // Joined series into one array and each element in array holds the points of one cluster. useMemo is used so that the value is recalculated only if one of the dependencies changes
   // instead of every render.
@@ -104,7 +107,7 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
     color: theme.colors.text.primary,
     tickfont: tickFont,
   };
-  const PLOT_SPACING = Number(theme.spacing(1).split('p')[0])
+  const PLOT_SPACING = Number(theme.spacing(1).split('p')[0]);
   const showTooltip = options.tooltip.mode !== TooltipDisplayMode.None && tooltip.tooltipOpen;
 
   const onMouseEnter = () => {
@@ -133,7 +136,7 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
       lastHoverPointNumber.current = eventPoint.pointNumber;
       onMouseMoveOverPlotlyPoint(eventPoint);
     }
-  }
+  };
 
   /**
    * Tries to save Plotly camera position.
@@ -148,12 +151,12 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
       }
       camera.current = figure.layout.scene.camera;
     }
-  }
+  };
 
   const onPlotlyPointUnhover = () => {
     lastHoverPointNumber.current = undefined;
     tooltip.hideTooltip();
-  }
+  };
 
   // const handleOnClickResetCamera = () => {
   //   setCamera({ ...initialCamera.current });
@@ -181,11 +184,11 @@ export const Cluster3DPanel: React.FC<Props> = (props: Props) => {
               useResizeHandler
               layout={{
                 autosize: true,
-                paper_bgcolor: "transparent",
+                paper_bgcolor: 'transparent',
                 // Plot resets on first color change. https://github.com/plotly/plotly.py/issues/3951.
                 // Possible solution at the end here: https://github.com/plotly/plotly.js/issues/6359.
                 // Explanation what this does: https://community.plotly.com/t/preserving-ui-state-like-zoom-in-dcc-graph-with-uirevision-with-dash/15793.
-                uirevision: "true",
+                uirevision: 'true',
                 showlegend: false,
                 margin: {
                   t: 0,

@@ -1,5 +1,7 @@
 # 3D cluster graph panel plugin for Grafana
 
+[![CI](https://github.com/TempusDigit/cluster-3d-panel/actions/workflows/ci.yml/badge.svg)](https://github.com/TempusDigit/cluster-3d-panel/actions/workflows/ci.yml)
+
 ## Getting started
 
 ### Frontend
@@ -56,4 +58,12 @@
    # or
 
    npm run lint:fix
+   ```
+
+## Development
+
+1. Run bundle script after changing Plotly version
+
+   ```bash
+   npm run plotly-bundle
    ```

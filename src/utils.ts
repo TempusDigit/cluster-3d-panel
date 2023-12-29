@@ -74,7 +74,7 @@ function getMappedFieldIndexes(series: DataFrame[], seriesConfig: Cluster3DSerie
  * @returns Returns a `DataFrame` containing fields that match the `SeriesConfig`.
  */
 export function mapSeries(series: DataFrame[], seriesConfig: Cluster3DSeriesConfig, mappingType: SeriesMapping): DataFrame[] {
-  if (!series.length || series.some((serie) => serie.fields.length < REQUIRED_FIELD_COUNT)) {
+  if (!series.length || series.some((frame) => frame.fields.length < REQUIRED_FIELD_COUNT)) {
     return [];
   }
 
@@ -134,26 +134,26 @@ export function mapSeries(series: DataFrame[], seriesConfig: Cluster3DSeriesConf
  * Reformats multiple series with `clusterLabel` fields into array of data separated by cluster labels.
  * 
  * @remarks
- * The field that has been mapped (designated) as the `clusterLabel` field of a serie is iterated over and each unique `clusterLabel` value is put into a hashmap with the
- * `cluster label` as the key. The mapped x, y and z values are appened as values to that key. This is done for each serie as there can be multiple data sources.
+ * The field that has been mapped (designated) as the `clusterLabel` field of a series is iterated over and each unique `clusterLabel` value is put into a hashmap with the
+ * `cluster label` as the key. The mapped x, y and z values are appened as values to that key. This is done for each series as there can be multiple data sources.
  */
 export function getClusterData(dataValid: boolean, series: DataFrame[], separateClustersBySeries: boolean): ClusterData[] {
   if (dataValid) {
     const localChartData = new Map<string, { x: number[], y: number[], z: number[] }>();
-    series.forEach(serie => {
-      // serie.fields[3] because the series has been mapped to only have 4 fields and so the last one (index 3 counting from 0) is the cluster labal field.
-      serie.fields[3].values.toArray().forEach((clusterLabel: string | number, i) => {
+    series.forEach(frame => {
+      // frame.fields[3] because the series has been mapped to only have 4 fields and so the last one (index 3 counting from 0) is the cluster labal field.
+      frame.fields[3].values.toArray().forEach((clusterLabel: string | number, i) => {
         clusterLabel = clusterLabel.toString();
         if (separateClustersBySeries) {
-          clusterLabel = serie.refId + clusterLabel;
+          clusterLabel = frame.refId + clusterLabel;
         }
         if (!localChartData.get(clusterLabel)) {
           localChartData.set(clusterLabel, { x: [], y: [], z: [] });
         }
         const xyz = localChartData.get(clusterLabel);
-        xyz?.x.push(serie.fields[0].values.get(i));
-        xyz?.y.push(serie.fields[1].values.get(i));
-        xyz?.z.push(serie.fields[2].values.get(i));
+        xyz?.x.push(frame.fields[0].values.get(i));
+        xyz?.y.push(frame.fields[1].values.get(i));
+        xyz?.z.push(frame.fields[2].values.get(i));
       });
     });
     return Array.from(localChartData, (entry) => {
@@ -175,9 +175,9 @@ export function getClusterData(dataValid: boolean, series: DataFrame[], separate
  */
 function getFieldColor(displayName: string, fieldConfig: FieldConfigSource) {
   for (const override of fieldConfig.overrides) {
-    if (override.matcher.id === "byName" && override.matcher.options === displayName.toString()) {
+    if (override.matcher.id === 'byName' && override.matcher.options === displayName.toString()) {
       for (const prop of override.properties) {
-        if (prop.id === "color" && prop.value) {
+        if (prop.id === 'color' && prop.value) {
           return prop.value;
         }
       }
@@ -198,7 +198,7 @@ export function getLegendData(dataValid: boolean, clusterData: ClusterData[], fi
       fields: clusterData.map((cluster, index) => {
         return {
           name: '' + cluster.clusterLabel, type: FieldType.number, config: { color: getFieldColor(cluster.clusterLabel, fieldConfig) }, values: new ArrayVector(), state: { seriesIndex: index }
-        }
+        };
       }), length: 0
     }];
   }
@@ -233,7 +233,7 @@ export function getVisibleClusterData(fieldConfig: FieldConfigSource<any>, clust
     const info = fieldMatchers.get(override.matcher.id);
     if (info) {
       for (const prop of override.properties) {
-        if (prop.id === "custom.hideFrom") {
+        if (prop.id === 'custom.hideFrom') {
           return { clusterLabels: new Map(override.matcher.options.names.map((name: string) => [name, null])), hideConfig: prop.value };
         }
       }
@@ -257,12 +257,13 @@ export function getPlotlyData(
     return clusterData.map((cluster, index) => {
       const color = fieldDisplayValues[index].display.color;
       return {
-        type: "scatter3d",
+        type: 'scatter3d',
         name: cluster.clusterLabel,
         x: cluster.x,
         y: cluster.y,
         z: cluster.z,
         visible: visibleClustersData.clusterLabels.has(cluster.clusterLabel),
+        // eslint-disable-next-line quotes
         mode: "markers",
         marker: {
           line: {
