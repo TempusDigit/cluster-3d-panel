@@ -1,7 +1,7 @@
 import { DataFrame, Field, FieldType, ArrayVector, getFieldDisplayName, FALLBACK_COLOR, FieldConfigSource, FieldDisplay, fieldMatchers } from '@grafana/data';
 import { SeriesVisibilityChangeMode } from '@grafana/ui';
 import { Cluster3DSeriesConfig, SeriesMapping, defaultSeriesConfig } from 'models.gen';
-import { Data } from 'plotly.js';
+import { Data } from 'plotly.js/dist/plotly-custom.min.js';
 import tinycolor from 'tinycolor2';
 import { Cluster3DTooltipData, ClusterData, VisibleClustersData } from 'types';
 
